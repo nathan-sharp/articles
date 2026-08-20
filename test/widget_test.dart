@@ -1,30 +1,58 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:articles/main.dart';
+import 'package:articles/services/database_service.dart';
+import 'package:articles/services/feed_service.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  testWidgets('ArticlesApp smoke test', (WidgetTester tester) async {
+    final ffiDb = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    await ffiDb.execute('''
+      CREATE TABLE feeds (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        url TEXT NOT NULL UNIQUE,
+        site_url TEXT,
+        description TEXT,
+        last_updated INTEGER NOT NULL,
+        category TEXT NOT NULL DEFAULT 'General',
+        is_active INTEGER NOT NULL DEFAULT 1,
+        error_message TEXT
+      );
+    ''');
+    await ffiDb.execute('''
+      CREATE TABLE articles (
+        id TEXT PRIMARY KEY,
+        feed_id TEXT NOT NULL,
+        feed_title TEXT NOT NULL,
+        title TEXT NOT NULL,
+        link TEXT NOT NULL,
+        author TEXT,
+        published_date INTEGER NOT NULL,
+        summary TEXT,
+        content TEXT,
+        image_url TEXT,
+        is_read INTEGER NOT NULL DEFAULT 0,
+        is_bookmarked INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (feed_id) REFERENCES feeds (id) ON DELETE CASCADE
+      );
+    ''');
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    final dbService = await DatabaseService.init(customDatabase: ffiDb);
+    final feedService = FeedService(dbService: dbService);
+
+    await tester.pumpWidget(ArticlesApp(feedService: feedService));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('ARTICLES'), findsOneWidget);
+    await dbService.close();
   });
 }
