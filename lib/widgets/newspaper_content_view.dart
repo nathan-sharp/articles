@@ -147,7 +147,7 @@ class NewspaperContentView extends StatelessWidget {
           margin: const EdgeInsets.symmetric(vertical: 12.0),
           padding: const EdgeInsets.all(12.0),
           decoration: BoxDecoration(
-            color: const Color(0xFFEBE7DD),
+            color: NewspaperTheme.containerAccent,
             border: Border.all(color: NewspaperTheme.ruleLine, width: 1.0),
           ),
           child: SelectableText(
@@ -211,7 +211,7 @@ class NewspaperContentView extends StatelessWidget {
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) => Container(
                   padding: const EdgeInsets.all(16.0),
-                  color: const Color(0xFFECE7DC),
+                  color: NewspaperTheme.containerAccent,
                   child: const Center(
                     child: Text(
                       '[ Image could not be loaded ]',

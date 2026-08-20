@@ -765,7 +765,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 ),
               ),
               selected: _selectedFeedId == null,
-              selectedTileColor: const Color(0xFFECE7DC),
+              selectedTileColor: NewspaperTheme.containerAccent,
               onTap: () {
                 Navigator.of(context).pop();
                 setState(() => _selectedFeedId = null);
@@ -798,7 +798,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       ),
                     ),
                     selected: isSelected,
-                    selectedTileColor: const Color(0xFFECE7DC),
+                    selectedTileColor: NewspaperTheme.containerAccent,
                     onTap: () {
                       Navigator.of(context).pop();
                       setState(() => _selectedFeedId = feed.id);

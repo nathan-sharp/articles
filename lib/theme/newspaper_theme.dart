@@ -4,15 +4,17 @@ import 'package:flutter/material.dart';
 class NewspaperTheme {
   NewspaperTheme._();
 
-  // Color Palette Tokens
-  static const Color newsprintBackground = Color(0xFFF6F3EB);
-  static const Color cardSurface = Color(0xFFFAF8F3);
-  static const Color inkBlack = Color(0xFF141414);
-  static const Color inkSecondary = Color(0xFF4A4A4A);
-  static const Color inkMuted = Color(0xFF757575);
-  static const Color ruleLine = Color(0xFF2B2B2B);
-  static const Color editorialAccent = Color(0xFF8B261D);
-  static const Color unreadDotColor = Color(0xFF8B261D);
+  // User-specified Color Palette Tokens
+  static const Color newsprintBackground = Color(0xFFE8CDAF);
+  static const Color cardSurface = Color(0xFFECD5BD);
+  static const Color containerAccent = Color(0xFFDFBF9C);
+  static const Color inputSurface = Color(0xFFF2E2D2);
+  static const Color inkBlack = Color(0xFF232436);
+  static const Color inkSecondary = Color(0xFF4E506B);
+  static const Color inkMuted = Color(0xFF757796);
+  static const Color ruleLine = Color(0xFF232436);
+  static const Color editorialAccent = Color(0xFF8B2C24);
+  static const Color unreadDotColor = Color(0xFF8B2C24);
 
   // Typography Family Definitions
   static const String serifFamily = 'Georgia';
@@ -28,11 +30,11 @@ class NewspaperTheme {
         primary: inkBlack,
         onPrimary: newsprintBackground,
         secondary: editorialAccent,
-        onSecondary: Colors.white,
+        onSecondary: newsprintBackground,
         surface: cardSurface,
         onSurface: inkBlack,
         error: editorialAccent,
-        onError: Colors.white,
+        onError: newsprintBackground,
       ),
       dividerColor: ruleLine,
       dividerTheme: const DividerThemeData(
@@ -115,7 +117,7 @@ class NewspaperTheme {
       ),
       inputDecorationTheme: const InputDecorationTheme(
         filled: true,
-        fillColor: Color(0xFFFFFFFF),
+        fillColor: inputSurface,
         contentPadding: EdgeInsets.symmetric(horizontal: 14.0, vertical: 12.0),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.zero,

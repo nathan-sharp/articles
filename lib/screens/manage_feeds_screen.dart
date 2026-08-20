@@ -222,7 +222,7 @@ class _ManageFeedsScreenState extends State<ManageFeedsScreen> {
                 Container(
                   constraints: const BoxConstraints(maxHeight: 180.0),
                   padding: const EdgeInsets.all(8.0),
-                  color: const Color(0xFFECE7DC),
+                  color: NewspaperTheme.containerAccent,
                   child: SingleChildScrollView(
                     child: SelectableText(
                       opmlXml,

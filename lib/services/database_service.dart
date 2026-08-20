@@ -260,6 +260,20 @@ class DatabaseService {
     );
   }
 
+  /// Updates the cached full text content of an article.
+  Future<void> updateArticleContent(String articleId, String content, {String? imageUrl}) async {
+    final values = <String, dynamic>{'content': content};
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      values['image_url'] = imageUrl;
+    }
+    await _db.update(
+      'articles',
+      values,
+      where: 'id = ?',
+      whereArgs: [articleId],
+    );
+  }
+
   /// Toggles or sets an article bookmark status.
   Future<void> setArticleBookmarkStatus(String articleId, bool isBookmarked) async {
     await _db.update(
