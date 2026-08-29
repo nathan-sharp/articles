@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:articles/main.dart';
 import 'package:articles/models/models.dart';
@@ -10,6 +12,7 @@ void main() {
   late DatabaseService dbService;
   late Database ffiDb;
   late FeedService feedService;
+  late http.Client mockClient;
 
   setUpAll(() {
     sqfliteFfiInit();
@@ -17,6 +20,7 @@ void main() {
   });
 
   setUp(() async {
+    mockClient = MockClient((request) async => http.Response('', 200));
     ffiDb = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
     await ffiDb.execute('''
       CREATE TABLE feeds (
@@ -50,18 +54,19 @@ void main() {
     ''');
 
     dbService = await DatabaseService.init(customDatabase: ffiDb);
-    feedService = FeedService(dbService: dbService);
+    feedService = FeedService(dbService: dbService, httpClient: mockClient);
   });
 
   tearDown(() async {
+    feedService.dispose();
     await dbService.close();
   });
 
   testWidgets('Renders newspaper masthead and empty state when no subscriptions exist', (tester) async {
     // Arrange & Act
-    await tester.pumpWidget(ArticlesApp(feedService: feedService));
     await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await tester.pumpWidget(ArticlesApp(feedService: feedService));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     });
     await tester.pump();
 
@@ -71,7 +76,7 @@ void main() {
     expect(find.text('LOAD STARTER FEEDS'), findsOneWidget);
   });
 
-  testWidgets('Renders article headlines and navigates to reader view upon selection', (tester) async {
+  testWidgets('Renders article headlines on FeedScreen and navigates to reader view', (tester) async {
     // Arrange
     final feed = Feed(
       id: 'f1',
@@ -89,16 +94,20 @@ void main() {
       author: 'Captain Nemo',
       publishedDate: DateTime.now().toUtc(),
       summary: 'Oceanographers identify ancient hydrothermal vent system.',
-      content: '<p>Complete report regarding deep sea expedition.</p>',
+      content: '<p>Complete report regarding deep sea expedition. ' * 10 + '</p>',
+      isRead: true,
     );
 
-    await dbService.insertFeed(feed);
-    await dbService.upsertArticles([article]);
+    await tester.runAsync(() async {
+      await dbService.insertFeed(feed);
+      await dbService.upsertArticles([article]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
 
     // Act
-    await tester.pumpWidget(ArticlesApp(feedService: feedService));
     await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await tester.pumpWidget(ArticlesApp(feedService: feedService));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     });
     await tester.pump();
 
@@ -106,17 +115,17 @@ void main() {
     expect(find.text('Historic Discovery in Deep Ocean'), findsOneWidget);
     expect(find.text('BY CAPTAIN NEMO'), findsOneWidget);
 
-    // Act: Tap article card to enter reader view
-    await tester.tap(find.text('Historic Discovery in Deep Ocean'));
+    // Act: Tap article
     await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await tester.tap(find.text('Historic Discovery in Deep Ocean'));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     });
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     // Assert Reader View
     expect(find.byType(ArticleScreen), findsOneWidget);
     expect(find.text('READ FULL STORY AT ORIGINAL SOURCE ↗'), findsOneWidget);
-    expect(find.text('Complete report regarding deep sea expedition.'), findsOneWidget);
+    expect(find.textContaining('Complete report regarding deep sea expedition.'), findsOneWidget);
   });
 }
-

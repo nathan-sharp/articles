@@ -11,11 +11,13 @@ import '../widgets/newspaper_content_view.dart';
 class ArticleScreen extends StatefulWidget {
   final Article article;
   final VoidCallback? onStateChanged;
+  final ArticleExtractor? extractor;
 
   const ArticleScreen({
     super.key,
     required this.article,
     this.onStateChanged,
+    this.extractor,
   });
 
   @override
@@ -24,7 +26,8 @@ class ArticleScreen extends StatefulWidget {
 
 class _ArticleScreenState extends State<ArticleScreen> {
   late Article _currentArticle;
-  final ArticleExtractor _extractor = ArticleExtractor();
+  late final ArticleExtractor _extractor;
+  late final bool _ownsExtractor;
   bool _isExtracting = false;
   bool _hasExtractedFullText = false;
   String? _extractionError;
@@ -33,6 +36,8 @@ class _ArticleScreenState extends State<ArticleScreen> {
   void initState() {
     super.initState();
     _currentArticle = widget.article;
+    _ownsExtractor = widget.extractor == null;
+    _extractor = widget.extractor ?? ArticleExtractor();
     _markAsReadAutomatically();
 
     // If feed only supplied a short teaser (under 400 chars), automatically fetch full article
@@ -44,7 +49,9 @@ class _ArticleScreenState extends State<ArticleScreen> {
 
   @override
   void dispose() {
-    _extractor.dispose();
+    if (_ownsExtractor) {
+      _extractor.dispose();
+    }
     super.dispose();
   }
 
