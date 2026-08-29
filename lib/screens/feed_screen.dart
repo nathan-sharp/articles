@@ -27,6 +27,7 @@ class _FeedScreenState extends State<FeedScreen> {
   bool _unreadOnly = false;
   bool _bookmarkedOnly = false;
   String _searchQuery = '';
+  bool _isSearchExpanded = false;
   bool _isLoading = false;
   bool _isRefreshing = false;
   int _unreadCount = 0;
@@ -133,42 +134,46 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: _buildDrawer(),
-      body: CustomScrollView(
-        slivers: [
-          // Newspaper Masthead & Header
-          SliverToBoxAdapter(
-            child: _buildMasthead(),
-          ),
-
-          // Control Toolbar & Filters
-          SliverToBoxAdapter(
-            child: _buildFilterToolbar(),
-          ),
-
-          // Article Feed Grid / List
-          if (_isLoading)
-            const SliverFillRemaining(
-              child: Center(
-                child: CircularProgressIndicator(color: NewspaperTheme.inkBlack),
-              ),
-            )
-          else if (_articles.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: _buildEmptyState(),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
-              sliver: SliverToBoxAdapter(
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1100.0),
-                    child: _buildArticlesLayout(),
-                  ),
-                ),
+      body: Column(
+        children: [
+          _buildMasthead(),
+          _buildFilterToolbar(),
+          const Divider(height: 1.0, thickness: 1.0, color: NewspaperTheme.ruleLine),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _refreshAll,
+              color: NewspaperTheme.newsprintBackground,
+              backgroundColor: NewspaperTheme.inkBlack,
+              child: CustomScrollView(
+                slivers: [
+                  // Article Feed Grid / List
+                  if (_isLoading)
+                    const SliverFillRemaining(
+                      child: Center(
+                        child: CircularProgressIndicator(color: NewspaperTheme.inkBlack),
+                      ),
+                    )
+                  else if (_articles.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _buildEmptyState(),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+                      sliver: SliverToBoxAdapter(
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1100.0),
+                            child: _buildArticlesLayout(),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
+          ),
         ],
       ),
     );
@@ -176,9 +181,6 @@ class _FeedScreenState extends State<FeedScreen> {
 
   /// Print Newspaper Masthead with banner and issue line.
   Widget _buildMasthead() {
-    final now = DateTime.now();
-    final dateString = DateFormat('EEEE, MMMM d, yyyy').format(now).toUpperCase();
-
     return Container(
       color: NewspaperTheme.newsprintBackground,
       padding: const EdgeInsets.only(top: 36.0, left: 20.0, right: 20.0, bottom: 8.0),
@@ -187,7 +189,7 @@ class _FeedScreenState extends State<FeedScreen> {
           constraints: const BoxConstraints(maxWidth: 1100.0),
           child: Column(
             children: [
-              // Top Bar with Actions
+              // Top Nav with Actions & Title
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -198,103 +200,52 @@ class _FeedScreenState extends State<FeedScreen> {
                       onPressed: () => Scaffold.of(context).openDrawer(),
                     ),
                   ),
-                  Row(
-                    children: [
-                      IconButton(
-                        tooltip: 'Manage Subscriptions',
-                        icon: const Icon(Icons.add_circle_outline, color: NewspaperTheme.inkBlack),
-                        onPressed: _openManageFeeds,
+                  const Expanded(
+                    child: Text(
+                      'ARTICLES',
+                      style: TextStyle(
+                        fontFamily: NewspaperTheme.serifFamily,
+                        fontSize: 28.0,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 4.0,
+                        color: NewspaperTheme.inkBlack,
+                        height: 1.0,
                       ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                       IconButton(
                         tooltip: 'Mark Visible as Read',
                         icon: const Icon(Icons.done_all, color: NewspaperTheme.inkBlack),
                         onPressed: _markAllAsRead,
                       ),
-                      IconButton(
-                        tooltip: 'Reload Edition',
-                        icon: _isRefreshing
-                            ? const SizedBox(
-                                width: 18.0,
-                                height: 18.0,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.0,
-                                  color: NewspaperTheme.inkBlack,
-                                ),
-                              )
-                            : const Icon(Icons.refresh, color: NewspaperTheme.inkBlack),
-                        onPressed: _refreshAll,
-                      ),
                     ],
                   ),
                 ],
               ),
-
-              // Title Masthead
-              const Text(
-                'ARTICLES',
-                style: TextStyle(
-                  fontFamily: NewspaperTheme.serifFamily,
-                  fontSize: 46.0,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 6.0,
-                  color: NewspaperTheme.inkBlack,
-                  height: 1.0,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 4.0),
-              const Text(
-                'THE INDEPENDENT SYNDICATED DISPATCH • DISTRACTION-FREE RSS READER',
-                style: TextStyle(
-                  fontFamily: NewspaperTheme.monospaceFamily,
-                  fontSize: 10.0,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 2.0,
-                  color: NewspaperTheme.inkSecondary,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12.0),
-
-              // Newspaper Double Rule Header
-              const Divider(thickness: 2.0, color: NewspaperTheme.ruleLine),
-              const SizedBox(height: 3.0),
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'VOL. I • NO. 1',
-                      style: TextStyle(
-                        fontFamily: NewspaperTheme.monospaceFamily,
-                        fontSize: 11.0,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      dateString,
-                      style: const TextStyle(
-                        fontFamily: NewspaperTheme.monospaceFamily,
-                        fontSize: 11.0,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      '$_unreadCount UNREAD',
-                      style: const TextStyle(
-                        fontFamily: NewspaperTheme.monospaceFamily,
-                        fontSize: 11.0,
-                        fontWeight: FontWeight.bold,
-                        color: NewspaperTheme.editorialAccent,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 3.0),
-              const Divider(thickness: 1.0, color: NewspaperTheme.ruleLine),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterLink(String text, bool isSelected, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontFamily: NewspaperTheme.monospaceFamily,
+            fontSize: 12.0,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            decoration: isSelected ? TextDecoration.underline : TextDecoration.none,
+            color: isSelected ? NewspaperTheme.inkBlack : NewspaperTheme.inkSecondary,
           ),
         ),
       ),
@@ -303,115 +254,110 @@ class _FeedScreenState extends State<FeedScreen> {
 
   /// Toolbar for filtering by Unread, Bookmarked, and Keyword search.
   Widget _buildFilterToolbar() {
+    final isAllSelected = !_unreadOnly && !_bookmarkedOnly && _selectedFeedId == null;
+
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 1100.0),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
-          child: Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8.0,
-            runSpacing: 8.0,
-            children: [
-              // Filter Chips
-              Wrap(
-                spacing: 8.0,
-                children: [
-                  ChoiceChip(
-                    label: const Text('ALL ARTICLES'),
-                    selected: !_unreadOnly && !_bookmarkedOnly && _selectedFeedId == null,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _unreadOnly = false;
-                          _bookmarkedOnly = false;
-                          _selectedFeedId = null;
-                        });
-                        _loadData();
-                      }
-                    },
-                    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-                    selectedColor: NewspaperTheme.inkBlack,
-                    labelStyle: TextStyle(
-                      fontFamily: NewspaperTheme.monospaceFamily,
-                      fontSize: 11.0,
-                      fontWeight: FontWeight.bold,
-                      color: (!_unreadOnly && !_bookmarkedOnly && _selectedFeedId == null)
-                          ? NewspaperTheme.newsprintBackground
-                          : NewspaperTheme.inkBlack,
-                    ),
-                  ),
-                  FilterChip(
-                    label: Text('UNREAD ($_unreadCount)'),
-                    selected: _unreadOnly,
-                    onSelected: (selected) {
-                      setState(() {
-                        _unreadOnly = selected;
-                        if (selected) _bookmarkedOnly = false;
-                      });
-                      _loadData();
-                    },
-                    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-                    selectedColor: NewspaperTheme.inkBlack,
-                    labelStyle: TextStyle(
-                      fontFamily: NewspaperTheme.monospaceFamily,
-                      fontSize: 11.0,
-                      fontWeight: FontWeight.bold,
-                      color: _unreadOnly ? NewspaperTheme.newsprintBackground : NewspaperTheme.inkBlack,
-                    ),
-                  ),
-                  FilterChip(
-                    label: const Text('BOOKMARKS'),
-                    selected: _bookmarkedOnly,
-                    onSelected: (selected) {
-                      setState(() {
-                        _bookmarkedOnly = selected;
-                        if (selected) _unreadOnly = false;
-                      });
-                      _loadData();
-                    },
-                    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-                    selectedColor: NewspaperTheme.inkBlack,
-                    labelStyle: TextStyle(
-                      fontFamily: NewspaperTheme.monospaceFamily,
-                      fontSize: 11.0,
-                      fontWeight: FontWeight.bold,
-                      color: _bookmarkedOnly ? NewspaperTheme.newsprintBackground : NewspaperTheme.inkBlack,
-                    ),
-                  ),
-                ],
-              ),
-
-              // Search Field
-              SizedBox(
-                width: 220.0,
-                height: 36.0,
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search edition...',
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 6.0),
-                    prefixIcon: const Icon(Icons.search, size: 16.0),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 16.0),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _searchQuery = '');
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: _isSearchExpanded
+                ? Row(
+                    key: const ValueKey('search_bar'),
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 32.0,
+                          child: TextField(
+                            controller: _searchController,
+                            autofocus: true,
+                            decoration: InputDecoration(
+                              hintText: 'Search...',
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
+                              prefixIconConstraints: const BoxConstraints(minWidth: 32.0, minHeight: 32.0),
+                              prefixIcon: const Icon(Icons.search, size: 16.0),
+                              suffixIconConstraints: const BoxConstraints(minWidth: 32.0, minHeight: 32.0),
+                              suffixIcon: _searchQuery.isNotEmpty
+                                  ? IconButton(
+                                      padding: EdgeInsets.zero,
+                                      icon: const Icon(Icons.clear, size: 16.0),
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        setState(() => _searchQuery = '');
+                                        _loadData();
+                                      },
+                                    )
+                                  : null,
+                            ),
+                            style: const TextStyle(fontFamily: NewspaperTheme.serifFamily, fontSize: 13.0),
+                            onSubmitted: (val) {
+                              setState(() => _searchQuery = val.trim());
                               _loadData();
                             },
-                          )
-                        : null,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: NewspaperTheme.inkBlack),
+                        onPressed: () {
+                          setState(() {
+                            _isSearchExpanded = false;
+                            if (_searchQuery.isNotEmpty) {
+                              _searchQuery = '';
+                              _searchController.clear();
+                              _loadData();
+                            }
+                          });
+                        },
+                      ),
+                    ],
+                  )
+                : Row(
+                    key: const ValueKey('filter_tabs'),
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.search, color: NewspaperTheme.inkBlack, size: 20.0),
+                        padding: const EdgeInsets.only(right: 12.0),
+                        constraints: const BoxConstraints(),
+                        onPressed: () => setState(() => _isSearchExpanded = true),
+                      ),
+                      Expanded(
+                        child: Wrap(
+                          spacing: 8.0,
+                          runSpacing: 8.0,
+                          children: [
+                            _buildFilterLink('ALL ARTICLES', isAllSelected, () {
+                              if (!isAllSelected) {
+                                setState(() {
+                                  _unreadOnly = false;
+                                  _bookmarkedOnly = false;
+                                  _selectedFeedId = null;
+                                });
+                                _loadData();
+                              }
+                            }),
+                            _buildFilterLink('UNREAD ($_unreadCount)', _unreadOnly, () {
+                              setState(() {
+                                _unreadOnly = !_unreadOnly;
+                                if (_unreadOnly) _bookmarkedOnly = false;
+                              });
+                              _loadData();
+                            }),
+                            _buildFilterLink('BOOKMARKS', _bookmarkedOnly, () {
+                              setState(() {
+                                _bookmarkedOnly = !_bookmarkedOnly;
+                                if (_bookmarkedOnly) _unreadOnly = false;
+                              });
+                              _loadData();
+                            }),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  style: const TextStyle(fontFamily: NewspaperTheme.serifFamily, fontSize: 13.0),
-                  onSubmitted: (val) {
-                    setState(() => _searchQuery = val.trim());
-                    _loadData();
-                  },
-                ),
-              ),
-            ],
           ),
         ),
       ),
