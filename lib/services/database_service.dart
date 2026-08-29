@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../models/models.dart';
 
@@ -24,6 +23,24 @@ class DatabaseService {
   /// Initialized state checker.
   static bool get isInitialized => _instance != null;
 
+  /// Resolves the desktop storage directory using pure dart:io without native plugin dependencies.
+  static Directory getDesktopDataDirectory() {
+    if (Platform.isWindows) {
+      final appData = Platform.environment['APPDATA'] ?? Platform.environment['LOCALAPPDATA'] ?? '.';
+      return Directory(p.join(appData, 'articles'));
+    } else if (Platform.isMacOS) {
+      final home = Platform.environment['HOME'] ?? '.';
+      return Directory(p.join(home, 'Library', 'Application Support', 'articles'));
+    } else {
+      final xdg = Platform.environment['XDG_DATA_HOME'];
+      if (xdg != null && xdg.isNotEmpty) {
+        return Directory(p.join(xdg, 'articles'));
+      }
+      final home = Platform.environment['HOME'] ?? '.';
+      return Directory(p.join(home, '.local', 'share', 'articles'));
+    }
+  }
+
   /// Initializes SQLite database engine with platform FFI support for desktop/mobile.
   static Future<DatabaseService> init({Database? customDatabase, String? dbName}) async {
     if (customDatabase != null) {
@@ -45,7 +62,10 @@ class DatabaseService {
     String dbPath;
 
     if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-      final docDir = await getApplicationSupportDirectory();
+      final docDir = getDesktopDataDirectory();
+      if (!docDir.existsSync()) {
+        docDir.createSync(recursive: true);
+      }
       dbPath = p.join(docDir.path, name);
     } else {
       final defaultDatabasesPath = await getDatabasesPath();
