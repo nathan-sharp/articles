@@ -74,8 +74,9 @@ class DatabaseService {
 
     final database = await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: _createDatabaseSchema,
+      onUpgrade: _upgradeDatabaseSchema,
     );
 
     final service = DatabaseService._(database);
@@ -117,10 +118,45 @@ class DatabaseService {
       );
     ''');
 
+    await db.execute('''
+      CREATE TABLE editorial_editions (
+        id TEXT PRIMARY KEY,
+        edition_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        subtitle TEXT,
+        generated_at INTEGER NOT NULL,
+        summary TEXT NOT NULL,
+        content_html TEXT NOT NULL,
+        source_article_ids TEXT NOT NULL,
+        is_read INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
+
     await db.execute('CREATE INDEX idx_articles_published_date ON articles (published_date DESC);');
     await db.execute('CREATE INDEX idx_articles_feed_id ON articles (feed_id);');
     await db.execute('CREATE INDEX idx_articles_is_read ON articles (is_read);');
     await db.execute('CREATE INDEX idx_articles_is_bookmarked ON articles (is_bookmarked);');
+    await db.execute('CREATE INDEX idx_editions_type_generated ON editorial_editions (edition_type, generated_at DESC);');
+  }
+
+  /// Handles schema migrations across database versions.
+  static Future<void> _upgradeDatabaseSchema(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS editorial_editions (
+          id TEXT PRIMARY KEY,
+          edition_type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          subtitle TEXT,
+          generated_at INTEGER NOT NULL,
+          summary TEXT NOT NULL,
+          content_html TEXT NOT NULL,
+          source_article_ids TEXT NOT NULL,
+          is_read INTEGER NOT NULL DEFAULT 0
+        );
+      ''');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_editions_type_generated ON editorial_editions (edition_type, generated_at DESC);');
+    }
   }
 
   // --- Feed Operations ---
@@ -334,6 +370,81 @@ class DatabaseService {
       result = await _db.rawQuery('SELECT COUNT(*) as count FROM articles WHERE is_read = 0');
     }
 
+    if (result.isEmpty) return 0;
+    return (result.first['count'] as int?) ?? 0;
+  }
+
+  // --- Editorial Edition Operations ---
+
+  /// Inserts or replaces a generated editorial edition.
+  Future<void> insertEdition(EditorialEdition edition) async {
+    await _db.insert(
+      'editorial_editions',
+      edition.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Retrieves the latest generated edition for a specific edition type.
+  Future<EditorialEdition?> getLatestEdition(EditionType type) async {
+    final rows = await _db.query(
+      'editorial_editions',
+      where: 'edition_type = ?',
+      whereArgs: [type.code],
+      orderBy: 'generated_at DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return EditorialEdition.fromMap(rows.first);
+  }
+
+  /// Retrieves the most recent edition of each edition type.
+  Future<Map<EditionType, EditorialEdition>> getAllLatestEditions() async {
+    final result = <EditionType, EditorialEdition>{};
+    for (final type in EditionType.values) {
+      final edition = await getLatestEdition(type);
+      if (edition != null) {
+        result[type] = edition;
+      }
+    }
+    return result;
+  }
+
+  /// Retrieves a specific editorial edition by its unique ID.
+  Future<EditorialEdition?> getEditionById(String id) async {
+    final rows = await _db.query(
+      'editorial_editions',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return EditorialEdition.fromMap(rows.first);
+  }
+
+  /// Updates the read status of an editorial edition.
+  Future<void> setEditionReadStatus(String id, bool isRead) async {
+    await _db.update(
+      'editorial_editions',
+      {'is_read': isRead ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Deletes editions older than the specified duration to reclaim storage.
+  Future<int> deleteOldEditions(Duration maxAge) async {
+    final cutoff = DateTime.now().toUtc().subtract(maxAge).millisecondsSinceEpoch;
+    return await _db.delete(
+      'editorial_editions',
+      where: 'generated_at < ?',
+      whereArgs: [cutoff],
+    );
+  }
+
+  /// Returns the count of unread editorial editions.
+  Future<int> getUnreadEditionCount() async {
+    final result = await _db.rawQuery('SELECT COUNT(*) as count FROM editorial_editions WHERE is_read = 0');
     if (result.isEmpty) return 0;
     return (result.first['count'] as int?) ?? 0;
   }

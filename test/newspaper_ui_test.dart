@@ -6,7 +6,9 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:articles/main.dart';
 import 'package:articles/models/models.dart';
 import 'package:articles/screens/article_screen.dart';
+import 'package:articles/screens/edition_screen.dart';
 import 'package:articles/services/database_service.dart';
+import 'package:articles/services/edition_service.dart';
 import 'package:articles/services/feed_service.dart';
 import 'package:articles/services/tts_service.dart';
 import 'package:articles/theme/newspaper_theme.dart';
@@ -14,6 +16,7 @@ import 'package:articles/theme/newspaper_theme.dart';
 void main() {
   late DatabaseService dbService;
   late Database ffiDb;
+  late EditionService editionService;
   late FeedService feedService;
   late http.Client mockClient;
 
@@ -55,9 +58,27 @@ void main() {
         FOREIGN KEY (feed_id) REFERENCES feeds (id) ON DELETE CASCADE
       );
     ''');
+    await ffiDb.execute('''
+      CREATE TABLE editorial_editions (
+        id TEXT PRIMARY KEY,
+        edition_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        subtitle TEXT,
+        generated_at INTEGER NOT NULL,
+        summary TEXT NOT NULL,
+        content_html TEXT NOT NULL,
+        source_article_ids TEXT NOT NULL,
+        is_read INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
 
     dbService = await DatabaseService.init(customDatabase: ffiDb);
-    feedService = FeedService(dbService: dbService, httpClient: mockClient);
+    editionService = EditionService(dbService: dbService);
+    feedService = FeedService(
+      dbService: dbService,
+      editionService: editionService,
+      httpClient: mockClient,
+    );
   });
 
   tearDown(() async {
@@ -68,7 +89,10 @@ void main() {
   testWidgets('Renders newspaper masthead and empty state when no subscriptions exist', (tester) async {
     // Arrange & Act
     await tester.runAsync(() async {
-      await tester.pumpWidget(ArticlesApp(feedService: feedService));
+      await tester.pumpWidget(ArticlesApp(
+        feedService: feedService,
+        editionService: editionService,
+      ));
       await Future<void>.delayed(const Duration(milliseconds: 50));
     });
     await tester.pump();
@@ -109,7 +133,10 @@ void main() {
 
     // Act
     await tester.runAsync(() async {
-      await tester.pumpWidget(ArticlesApp(feedService: feedService));
+      await tester.pumpWidget(ArticlesApp(
+        feedService: feedService,
+        editionService: editionService,
+      ));
       await Future<void>.delayed(const Duration(milliseconds: 50));
     });
     await tester.pump();
@@ -130,6 +157,92 @@ void main() {
     expect(find.byType(ArticleScreen), findsOneWidget);
     expect(find.text('READ FULL STORY AT ORIGINAL SOURCE ↗'), findsOneWidget);
     expect(find.textContaining('Complete report regarding deep sea expedition.'), findsOneWidget);
+  });
+
+  testWidgets('Side Drawer displays EDITORIAL EDITIONS section with four edition tiles', (tester) async {
+    // Arrange
+    final morningEdition = EditorialEdition(
+      id: 'edition_morning_20260830',
+      type: EditionType.morning,
+      title: 'MORNING BRIEFING: TEST',
+      generatedAt: DateTime.now().toUtc(),
+      summary: 'Morning summary text',
+      contentHtml: '<p>Morning content</p>',
+    );
+
+    await tester.runAsync(() async {
+      await dbService.insertEdition(morningEdition);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+
+    // Act
+    await tester.runAsync(() async {
+      await tester.pumpWidget(ArticlesApp(
+        feedService: feedService,
+        editionService: editionService,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump();
+
+    // Open drawer
+    final menuButton = find.byTooltip('Feed Sections & Feeds');
+    expect(menuButton, findsOneWidget);
+    await tester.tap(menuButton);
+    await tester.pumpAndSettle();
+
+    // Assert Drawer Content
+    expect(find.text('EDITORIAL EDITIONS'), findsOneWidget);
+    expect(find.text('ON-DEVICE AI'), findsOneWidget);
+    expect(find.text('Morning Briefing'), findsOneWidget);
+    expect(find.text('Evening Dispatch'), findsOneWidget);
+    expect(find.text('Monday Kickoff'), findsOneWidget);
+    expect(find.text('Friday Review'), findsOneWidget);
+  });
+
+  testWidgets('Tapping an edition tile in the side drawer navigates to EditionScreen', (tester) async {
+    // Arrange
+    final eveningEdition = EditorialEdition(
+      id: 'edition_evening_20260830',
+      type: EditionType.evening,
+      title: 'EVENING DISPATCH: MAJOR TECH EVENT',
+      subtitle: 'SYNTHESIZED ON-DEVICE FROM 5 DISPATCHES',
+      generatedAt: DateTime.now().toUtc(),
+      summary: 'Evening executive summary overview',
+      contentHtml: '<h2>EXECUTIVE OVERVIEW</h2><p>Evening overview body</p>',
+    );
+
+    await tester.runAsync(() async {
+      await dbService.insertEdition(eveningEdition);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+
+    // Act
+    await tester.runAsync(() async {
+      await tester.pumpWidget(ArticlesApp(
+        feedService: feedService,
+        editionService: editionService,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump();
+
+    // Open drawer
+    await tester.tap(find.byTooltip('Feed Sections & Feeds'));
+    await tester.pumpAndSettle();
+
+    // Tap Evening Dispatch
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Evening Dispatch'));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+
+    // Assert EditionScreen is displayed
+    expect(find.byType(EditionScreen), findsOneWidget);
+    expect(find.text('EVENING DISPATCH: MAJOR TECH EVENT'), findsOneWidget);
+    expect(find.text('ON-DEVICE AI SYNTHESIS • 100% PRIVATE'), findsOneWidget);
+    expect(find.text('RE-SYNTHESIZE THIS EDITION (ON-DEVICE AI)'), findsOneWidget);
   });
 
   testWidgets('ArticleScreen displays TTS button and toggles speech playback state', (tester) async {

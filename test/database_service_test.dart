@@ -45,6 +45,19 @@ void main() {
         FOREIGN KEY (feed_id) REFERENCES feeds (id) ON DELETE CASCADE
       );
     ''');
+    await ffiDb.execute('''
+      CREATE TABLE editorial_editions (
+        id TEXT PRIMARY KEY,
+        edition_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        subtitle TEXT,
+        generated_at INTEGER NOT NULL,
+        summary TEXT NOT NULL,
+        content_html TEXT NOT NULL,
+        source_article_ids TEXT NOT NULL,
+        is_read INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
 
     dbService = await DatabaseService.init(customDatabase: ffiDb);
   });
@@ -183,6 +196,76 @@ void main() {
       expect(unreadArticles.length, equals(1));
       expect(unreadArticles.first.id, equals('a2'));
       expect(unreadCount, equals(1));
+    });
+  });
+
+  group('DatabaseService - Editorial Edition Operations (AAA Pattern)', () {
+    test('inserts, retrieves, and updates read status of editorial editions', () async {
+      // Arrange
+      final edition = EditorialEdition(
+        id: 'edition_morning_20260830',
+        type: EditionType.morning,
+        title: 'MORNING BRIEFING: GLOBAL MARKETS',
+        subtitle: 'SYNTHESIZED ON-DEVICE',
+        generatedAt: DateTime.utc(2026, 8, 30, 8, 0),
+        summary: 'Executive overview text',
+        contentHtml: '<h2>Overview</h2><p>Summary paragraph</p>',
+        sourceArticleIds: ['art_1', 'art_2'],
+        isRead: false,
+      );
+
+      // Act: Insert
+      await dbService.insertEdition(edition);
+      final retrieved = await dbService.getLatestEdition(EditionType.morning);
+      final unreadCountBefore = await dbService.getUnreadEditionCount();
+
+      // Act: Mark Read
+      await dbService.setEditionReadStatus('edition_morning_20260830', true);
+      final retrievedAfterRead = await dbService.getLatestEdition(EditionType.morning);
+      final unreadCountAfter = await dbService.getUnreadEditionCount();
+
+      // Assert
+      expect(retrieved, isNotNull);
+      expect(retrieved!.id, equals('edition_morning_20260830'));
+      expect(retrieved.type, equals(EditionType.morning));
+      expect(retrieved.sourceArticleIds, equals(['art_1', 'art_2']));
+      expect(retrieved.isRead, isFalse);
+      expect(unreadCountBefore, equals(1));
+
+      expect(retrievedAfterRead!.isRead, isTrue);
+      expect(unreadCountAfter, equals(0));
+    });
+
+    test('deletes editions older than max age threshold', () async {
+      // Arrange
+      final oldEdition = EditorialEdition(
+        id: 'edition_old',
+        type: EditionType.evening,
+        title: 'OLD EVENING',
+        generatedAt: DateTime.now().toUtc().subtract(const Duration(days: 30)),
+        summary: 'Old summary',
+        contentHtml: '<p>Old</p>',
+      );
+      final recentEdition = EditorialEdition(
+        id: 'edition_recent',
+        type: EditionType.evening,
+        title: 'RECENT EVENING',
+        generatedAt: DateTime.now().toUtc().subtract(const Duration(hours: 1)),
+        summary: 'Recent summary',
+        contentHtml: '<p>Recent</p>',
+      );
+
+      await dbService.insertEdition(oldEdition);
+      await dbService.insertEdition(recentEdition);
+
+      // Act
+      final deletedCount = await dbService.deleteOldEditions(const Duration(days: 7));
+      final remaining = await dbService.getLatestEdition(EditionType.evening);
+
+      // Assert
+      expect(deletedCount, equals(1));
+      expect(remaining, isNotNull);
+      expect(remaining!.id, equals('edition_recent'));
     });
   });
 }

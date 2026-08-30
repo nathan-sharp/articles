@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart';
+import 'dart:convert';
+import 'package:flutter/material.dart';
 
 /// Immutable domain model representing a syndicated RSS/Atom feed source.
 @immutable
@@ -212,5 +213,177 @@ class Article {
 
   @override
   int get hashCode => Object.hash(id, feedId, link, isRead, isBookmarked);
+}
+
+/// Enumeration of supported periodic editorial edition types.
+enum EditionType {
+  morning,
+  evening,
+  monday,
+  friday;
+
+  /// Returns user-facing label for the edition type.
+  String get displayName {
+    switch (this) {
+      case EditionType.morning:
+        return 'Morning Briefing';
+      case EditionType.evening:
+        return 'Evening Dispatch';
+      case EditionType.monday:
+        return 'Monday Kickoff';
+      case EditionType.friday:
+        return 'Friday Review';
+    }
+  }
+
+  /// Returns clean monochrome Material icon data matching print newspaper aesthetic.
+  IconData get iconData {
+    switch (this) {
+      case EditionType.morning:
+        return Icons.wb_sunny_outlined;
+      case EditionType.evening:
+        return Icons.bedtime_outlined;
+      case EditionType.monday:
+        return Icons.calendar_today_outlined;
+      case EditionType.friday:
+        return Icons.newspaper_outlined;
+    }
+  }
+
+  /// Returns classical typographic issue label for print masthead.
+  String get issueTag {
+    switch (this) {
+      case EditionType.morning:
+        return 'ED. MORNING';
+      case EditionType.evening:
+        return 'ED. EVENING';
+      case EditionType.monday:
+        return 'VOL. MONDAY';
+      case EditionType.friday:
+        return 'VOL. FRIDAY';
+    }
+  }
+
+  /// Returns serialized database identifier string.
+  String get code => name;
+
+  /// Parses code string to [EditionType].
+  static EditionType fromCode(String code) {
+    return EditionType.values.firstWhere(
+      (e) => e.name == code,
+      orElse: () => EditionType.morning,
+    );
+  }
+}
+
+/// Immutable domain model representing a personalized, on-device synthesized newspaper edition.
+@immutable
+class EditorialEdition {
+  final String id;
+  final EditionType type;
+  final String title;
+  final String subtitle;
+  final DateTime generatedAt;
+  final String summary;
+  final String contentHtml;
+  final List<String> sourceArticleIds;
+  final bool isRead;
+
+  const EditorialEdition({
+    required this.id,
+    required this.type,
+    required this.title,
+    this.subtitle = '',
+    required this.generatedAt,
+    required this.summary,
+    required this.contentHtml,
+    this.sourceArticleIds = const <String>[],
+    this.isRead = false,
+  });
+
+  /// Factory constructor to deserialize an [EditorialEdition] from a database row map.
+  factory EditorialEdition.fromMap(Map<String, dynamic> map) {
+    List<String> parsedIds = const [];
+    final rawIds = map['source_article_ids'];
+    if (rawIds is String && rawIds.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawIds);
+        if (decoded is List) {
+          parsedIds = decoded.map((e) => e.toString()).toList();
+        }
+      } catch (_) {
+        parsedIds = const [];
+      }
+    }
+
+    return EditorialEdition(
+      id: map['id'] as String? ?? '',
+      type: EditionType.fromCode(map['edition_type'] as String? ?? 'morning'),
+      title: map['title'] as String? ?? 'Editorial Edition',
+      subtitle: map['subtitle'] as String? ?? '',
+      generatedAt: DateTime.fromMillisecondsSinceEpoch(
+        map['generated_at'] as int? ?? 0,
+        isUtc: true,
+      ),
+      summary: map['summary'] as String? ?? '',
+      contentHtml: map['content_html'] as String? ?? '',
+      sourceArticleIds: parsedIds,
+      isRead: (map['is_read'] as int? ?? 0) == 1,
+    );
+  }
+
+  /// Serializes the [EditorialEdition] instance to a database-compatible map.
+  Map<String, dynamic> toMap() {
+    return <String, dynamic>{
+      'id': id,
+      'edition_type': type.code,
+      'title': title,
+      'subtitle': subtitle,
+      'generated_at': generatedAt.millisecondsSinceEpoch,
+      'summary': summary,
+      'content_html': contentHtml,
+      'source_article_ids': jsonEncode(sourceArticleIds),
+      'is_read': isRead ? 1 : 0,
+    };
+  }
+
+  /// Creates a copy of this [EditorialEdition] with updated values.
+  EditorialEdition copyWith({
+    String? id,
+    EditionType? type,
+    String? title,
+    String? subtitle,
+    DateTime? generatedAt,
+    String? summary,
+    String? contentHtml,
+    List<String>? sourceArticleIds,
+    bool? isRead,
+  }) {
+    return EditorialEdition(
+      id: id ?? this.id,
+      type: type ?? this.type,
+      title: title ?? this.title,
+      subtitle: subtitle ?? this.subtitle,
+      generatedAt: generatedAt ?? this.generatedAt,
+      summary: summary ?? this.summary,
+      contentHtml: contentHtml ?? this.contentHtml,
+      sourceArticleIds: sourceArticleIds ?? this.sourceArticleIds,
+      isRead: isRead ?? this.isRead,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is EditorialEdition &&
+        other.id == id &&
+        other.type == type &&
+        other.title == title &&
+        other.generatedAt == generatedAt &&
+        other.isRead == isRead;
+  }
+
+  @override
+  int get hashCode => Object.hash(id, type, title, generatedAt, isRead);
 }
 

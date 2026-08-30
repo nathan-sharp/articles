@@ -2,18 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
+import '../services/edition_service.dart';
 import '../services/feed_service.dart';
 import '../theme/newspaper_theme.dart';
 import 'article_screen.dart';
+import 'edition_screen.dart';
 import 'manage_feeds_screen.dart';
 
 /// Main screen rendering the aggregated newspaper edition with masthead and article feeds.
 class FeedScreen extends StatefulWidget {
   final FeedService feedService;
+  final EditionService? editionService;
 
   const FeedScreen({
     super.key,
     required this.feedService,
+    this.editionService,
   });
 
   @override
@@ -21,8 +25,10 @@ class FeedScreen extends StatefulWidget {
 }
 
 class _FeedScreenState extends State<FeedScreen> {
+  late final EditionService _editionService;
   List<Article> _articles = [];
   List<Feed> _feeds = [];
+  Map<EditionType, EditorialEdition?> _cachedEditions = {};
   String? _selectedFeedId;
   bool _unreadOnly = false;
   bool _bookmarkedOnly = false;
@@ -37,6 +43,7 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   void initState() {
     super.initState();
+    _editionService = widget.editionService ?? EditionService(dbService: DatabaseService.instance);
     _loadData();
   }
 
@@ -58,12 +65,14 @@ class _FeedScreenState extends State<FeedScreen> {
       limit: 100,
     );
     final unread = await DatabaseService.instance.getUnreadCount();
+    final editions = await _editionService.getAllEditions();
 
     if (mounted) {
       setState(() {
         _feeds = feeds;
         _articles = articles;
         _unreadCount = unread;
+        _cachedEditions = editions;
         _isLoading = false;
       });
     }
@@ -128,6 +137,38 @@ class _FeedScreenState extends State<FeedScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _openEdition(EditionType type) async {
+    EditorialEdition? edition = _cachedEditions[type];
+    if (edition == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Synthesizing ${type.displayName} on-device...',
+              style: const TextStyle(fontFamily: NewspaperTheme.monospaceFamily),
+            ),
+            backgroundColor: NewspaperTheme.inkBlack,
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+      edition = await _editionService.getOrGenerateEdition(type);
+    }
+
+    if (!mounted) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => EditionScreen(
+          edition: edition!,
+          editionService: _editionService,
+          onStateChanged: _loadData,
+        ),
+      ),
+    );
+    _loadData();
   }
 
   @override
@@ -701,59 +742,117 @@ class _FeedScreenState extends State<FeedScreen> {
                 ],
               ),
             ),
-            ListTile(
-              title: const Text(
-                'FRONT PAGE (ALL FEEDS)',
-                style: TextStyle(
-                  fontFamily: NewspaperTheme.monospaceFamily,
-                  fontSize: 12.0,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              selected: _selectedFeedId == null,
-              selectedTileColor: NewspaperTheme.containerAccent,
-              onTap: () {
-                Navigator.of(context).pop();
-                setState(() => _selectedFeedId = null);
-                _loadData();
-              },
-            ),
-            const Divider(thickness: 1.0, color: NewspaperTheme.ruleLine),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _feeds.length,
-                itemBuilder: (context, index) {
-                  final feed = _feeds[index];
-                  final isSelected = _selectedFeedId == feed.id;
 
-                  return ListTile(
-                    title: Text(
-                      feed.title,
-                      style: TextStyle(
-                        fontFamily: NewspaperTheme.serifFamily,
-                        fontSize: 14.0,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      ),
+            // Scrollable Drawer Body
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  // Editorial Editions Section Header
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    color: NewspaperTheme.containerAccent,
+                    child: const Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'EDITORIAL EDITIONS',
+                            style: TextStyle(
+                              fontFamily: NewspaperTheme.monospaceFamily,
+                              fontSize: 11.0,
+                              fontWeight: FontWeight.bold,
+                              color: NewspaperTheme.inkBlack,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          'ON-DEVICE AI',
+                          style: TextStyle(
+                            fontFamily: NewspaperTheme.monospaceFamily,
+                            fontSize: 9.0,
+                            fontWeight: FontWeight.bold,
+                            color: NewspaperTheme.editorialAccent,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
                     ),
-                    subtitle: Text(
-                      feed.category.toUpperCase(),
-                      style: const TextStyle(
+                  ),
+
+                  // 4 Editorial Edition Tiles
+                  ...EditionType.values.map(_buildEditionDrawerTile),
+                  const Divider(thickness: 2.0, color: NewspaperTheme.ruleLine),
+
+                  // Feed Sources Section Header
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: const Text(
+                      'SYNDICATED SOURCES',
+                      style: TextStyle(
                         fontFamily: NewspaperTheme.monospaceFamily,
                         fontSize: 10.0,
+                        fontWeight: FontWeight.bold,
                         color: NewspaperTheme.inkSecondary,
+                        letterSpacing: 1.0,
                       ),
                     ),
-                    selected: isSelected,
+                  ),
+
+                  ListTile(
+                    dense: true,
+                    title: const Text(
+                      'FRONT PAGE (ALL FEEDS)',
+                      style: TextStyle(
+                        fontFamily: NewspaperTheme.monospaceFamily,
+                        fontSize: 12.0,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    selected: _selectedFeedId == null,
                     selectedTileColor: NewspaperTheme.containerAccent,
                     onTap: () {
                       Navigator.of(context).pop();
-                      setState(() => _selectedFeedId = feed.id);
+                      setState(() => _selectedFeedId = null);
                       _loadData();
                     },
-                  );
-                },
+                  ),
+                  const Divider(thickness: 1.0, color: NewspaperTheme.ruleLine),
+
+                  // Feed List
+                  ..._feeds.map((feed) {
+                    final isSelected = _selectedFeedId == feed.id;
+                    return ListTile(
+                      dense: true,
+                      title: Text(
+                        feed.title,
+                        style: TextStyle(
+                          fontFamily: NewspaperTheme.serifFamily,
+                          fontSize: 14.0,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      subtitle: Text(
+                        feed.category.toUpperCase(),
+                        style: const TextStyle(
+                          fontFamily: NewspaperTheme.monospaceFamily,
+                          fontSize: 10.0,
+                          color: NewspaperTheme.inkSecondary,
+                        ),
+                      ),
+                      selected: isSelected,
+                      selectedTileColor: NewspaperTheme.containerAccent,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        setState(() => _selectedFeedId = feed.id);
+                        _loadData();
+                      },
+                    );
+                  }),
+                ],
               ),
             ),
+
             Container(
               padding: const EdgeInsets.all(16.0),
               decoration: const BoxDecoration(
@@ -771,6 +870,65 @@ class _FeedScreenState extends State<FeedScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildEditionDrawerTile(EditionType type) {
+    final edition = _cachedEditions[type];
+    final isUnread = edition != null && !edition.isRead;
+    final subtitle = edition != null
+        ? 'Generated: ${DateFormat('MMM d • HH:mm').format(edition.generatedAt.toLocal())}'
+        : 'Tap to generate on-device';
+
+    return ListTile(
+      dense: true,
+      leading: Icon(
+        type.iconData,
+        size: 20.0,
+        color: NewspaperTheme.inkBlack,
+      ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              type.displayName,
+              style: const TextStyle(
+                fontFamily: NewspaperTheme.serifFamily,
+                fontSize: 13.0,
+                fontWeight: FontWeight.bold,
+                color: NewspaperTheme.inkBlack,
+              ),
+            ),
+          ),
+          if (isUnread) ...[
+            Container(
+              width: 8.0,
+              height: 8.0,
+              decoration: const BoxDecoration(
+                color: NewspaperTheme.unreadDotColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ],
+        ],
+      ),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(
+          fontFamily: NewspaperTheme.monospaceFamily,
+          fontSize: 10.0,
+          color: NewspaperTheme.inkSecondary,
+        ),
+      ),
+      trailing: const Icon(
+        Icons.chevron_right,
+        size: 16.0,
+        color: NewspaperTheme.inkSecondary,
+      ),
+      onTap: () {
+        Navigator.of(context).pop();
+        _openEdition(type);
+      },
     );
   }
 }

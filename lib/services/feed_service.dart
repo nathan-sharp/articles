@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:http/http.dart' as http;
 import '../models/models.dart';
 import 'database_service.dart';
+import 'edition_service.dart';
 import 'feed_parser.dart';
 import 'security_validator.dart';
 
@@ -23,6 +24,7 @@ class StarterFeed {
 /// Service managing remote feed retrieval, background synchronization, and starter collections.
 class FeedService {
   final DatabaseService _dbService;
+  final EditionService? _editionService;
   final http.Client _httpClient;
 
   /// Curated collection of standard, reliable open feeds.
@@ -61,8 +63,10 @@ class FeedService {
 
   FeedService({
     required DatabaseService dbService,
+    EditionService? editionService,
     http.Client? httpClient,
   })  : _dbService = dbService,
+        _editionService = editionService,
         _httpClient = httpClient ?? http.Client();
 
   /// Adds a new feed by URL, fetches its metadata and initial articles, and saves to database.
@@ -149,6 +153,12 @@ class FeedService {
     });
 
     await Future.wait(futures);
+
+    // Precompute on-device editorial editions in background worker isolates
+    if (_editionService != null) {
+      unawaited(_editionService.precomputeStaleEditions());
+    }
+
     return totalNewArticles;
   }
 
@@ -167,6 +177,12 @@ class FeedService {
         // Individual starter feed failure is skipped safely
       }
     }
+
+    // Trigger on-device edition synthesis for newly ingested starter articles
+    if (_editionService != null) {
+      unawaited(_editionService.precomputeStaleEditions());
+    }
+
     return loadedCount;
   }
 
