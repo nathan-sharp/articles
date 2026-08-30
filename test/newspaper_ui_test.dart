@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -7,6 +8,8 @@ import 'package:articles/models/models.dart';
 import 'package:articles/screens/article_screen.dart';
 import 'package:articles/services/database_service.dart';
 import 'package:articles/services/feed_service.dart';
+import 'package:articles/services/tts_service.dart';
+import 'package:articles/theme/newspaper_theme.dart';
 
 void main() {
   late DatabaseService dbService;
@@ -128,4 +131,117 @@ void main() {
     expect(find.text('READ FULL STORY AT ORIGINAL SOURCE ↗'), findsOneWidget);
     expect(find.textContaining('Complete report regarding deep sea expedition.'), findsOneWidget);
   });
+
+  testWidgets('ArticleScreen displays TTS button and toggles speech playback state', (tester) async {
+    // Arrange
+    final article = Article(
+      id: 'art-tts-1',
+      feedId: 'f1',
+      feedTitle: 'The Daily Chronicle',
+      title: 'Ocean Acoustics Study',
+      link: 'https://chronicle.example.com/acoustics',
+      author: 'Dr. Aronnax',
+      publishedDate: DateTime.now().toUtc(),
+      summary: 'Hydrophone recordings reveal underwater songs.',
+      content: '<p>Acoustic sensors registered low-frequency signatures across the Mariana Trench.</p>',
+    );
+    final mockEngine = _TestTtsEngine();
+    final ttsService = TtsService(engine: mockEngine);
+
+    // Act: Render ArticleScreen with injected TtsService
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: NewspaperTheme.themeData,
+        home: ArticleScreen(
+          article: article,
+          ttsService: ttsService,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Assert: Idle TTS button is present
+    final playButton = find.byTooltip('Read Article Aloud (On-Device Voice)');
+    expect(playButton, findsOneWidget);
+    expect(find.byIcon(Icons.volume_up_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.stop_circle_outlined), findsNothing);
+
+    // Act: Tap play button
+    await tester.tap(playButton);
+    await tester.pump();
+
+    // Assert: Playback started, icon switches to stop button
+    expect(mockEngine.spokenChunks, isNotEmpty);
+    expect(mockEngine.spokenChunks.first, contains('Ocean Acoustics Study'));
+    final stopButton = find.byTooltip('Stop Reading Aloud');
+    expect(stopButton, findsOneWidget);
+    expect(find.byIcon(Icons.stop_circle_outlined), findsOneWidget);
+
+    // Act: Tap stop button
+    await tester.tap(stopButton);
+    await tester.pump();
+
+    // Assert: Playback stopped, icon reverts to speaker
+    expect(find.byTooltip('Read Article Aloud (On-Device Voice)'), findsOneWidget);
+    expect(find.byIcon(Icons.volume_up_outlined), findsOneWidget);
+  });
+}
+
+class _TestTtsEngine implements TtsPlatformEngine {
+  final List<String> spokenChunks = [];
+  bool isStopped = false;
+  void Function()? onStart;
+  void Function()? onComplete;
+  void Function(dynamic message)? onError;
+  void Function()? onCancel;
+  void Function()? onPause;
+  void Function()? onContinue;
+
+  @override
+  Future<dynamic> speak(String text) async {
+    spokenChunks.add(text);
+    isStopped = false;
+    onStart?.call();
+    return 1;
+  }
+
+  @override
+  Future<dynamic> stop() async {
+    isStopped = true;
+    onCancel?.call();
+    return 1;
+  }
+
+  @override
+  Future<dynamic> pause() async => 1;
+
+  @override
+  Future<dynamic> setLanguage(String language) async => 1;
+
+  @override
+  Future<dynamic> setSpeechRate(double rate) async => 1;
+
+  @override
+  Future<dynamic> setVolume(double volume) async => 1;
+
+  @override
+  Future<dynamic> setPitch(double pitch) async => 1;
+
+  @override
+  void setStartHandler(void Function() callback) => onStart = callback;
+
+  @override
+  void setCompletionHandler(void Function() callback) => onComplete = callback;
+
+  @override
+  void setErrorHandler(void Function(dynamic message) callback) => onError = callback;
+
+  @override
+  void setCancelHandler(void Function() callback) => onCancel = callback;
+
+  @override
+  void setPauseHandler(void Function() callback) => onPause = callback;
+
+  @override
+  void setContinueHandler(void Function() callback) => onContinue = callback;
 }

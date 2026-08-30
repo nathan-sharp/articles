@@ -125,6 +125,9 @@ class SecurityValidator {
     // Normalize consecutive whitespace
     text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
 
+    // Clean whitespace preceding punctuation marks
+    text = text.replaceAllMapped(RegExp(r'\s+([.,!?;:])'), (m) => m.group(1)!);
+
     return text;
   }
 

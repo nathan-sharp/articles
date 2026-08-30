@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
 import '../services/article_extractor.dart';
 import '../services/database_service.dart';
+import '../services/tts_service.dart';
 import '../theme/newspaper_theme.dart';
 import '../widgets/newspaper_content_view.dart';
 
@@ -12,12 +14,14 @@ class ArticleScreen extends StatefulWidget {
   final Article article;
   final VoidCallback? onStateChanged;
   final ArticleExtractor? extractor;
+  final TtsService? ttsService;
 
   const ArticleScreen({
     super.key,
     required this.article,
     this.onStateChanged,
     this.extractor,
+    this.ttsService,
   });
 
   @override
@@ -28,6 +32,10 @@ class _ArticleScreenState extends State<ArticleScreen> {
   late Article _currentArticle;
   late final ArticleExtractor _extractor;
   late final bool _ownsExtractor;
+  late final TtsService _ttsService;
+  late final bool _ownsTtsService;
+  StreamSubscription<TtsPlaybackState>? _ttsSubscription;
+  TtsPlaybackState _ttsState = TtsPlaybackState.stopped;
   bool _isExtracting = false;
   bool _hasExtractedFullText = false;
   String? _extractionError;
@@ -38,6 +46,16 @@ class _ArticleScreenState extends State<ArticleScreen> {
     _currentArticle = widget.article;
     _ownsExtractor = widget.extractor == null;
     _extractor = widget.extractor ?? ArticleExtractor();
+    _ownsTtsService = widget.ttsService == null;
+    _ttsService = widget.ttsService ?? TtsService();
+    _ttsState = _ttsService.state;
+    _ttsSubscription = _ttsService.stateStream.listen((state) {
+      if (mounted) {
+        setState(() {
+          _ttsState = state;
+        });
+      }
+    });
     _markAsReadAutomatically();
 
     // If feed only supplied a short teaser (under 400 chars), automatically fetch full article
@@ -49,6 +67,11 @@ class _ArticleScreenState extends State<ArticleScreen> {
 
   @override
   void dispose() {
+    _ttsSubscription?.cancel();
+    _ttsService.stop();
+    if (_ownsTtsService) {
+      _ttsService.dispose();
+    }
     if (_ownsExtractor) {
       _extractor.dispose();
     }
@@ -139,6 +162,21 @@ class _ArticleScreenState extends State<ArticleScreen> {
     widget.onStateChanged?.call();
   }
 
+  Future<void> _toggleTts() async {
+    if (_ttsState == TtsPlaybackState.playing) {
+      await _ttsService.stop();
+    } else {
+      final contentToSpeak = _currentArticle.content.isNotEmpty
+          ? _currentArticle.content
+          : _currentArticle.summary;
+      await _ttsService.speakArticle(
+        title: _currentArticle.title,
+        byline: _buildBylineString(),
+        contentHtml: contentToSpeak,
+      );
+    }
+  }
+
   Future<void> _openInBrowser() async {
     final uri = Uri.tryParse(_currentArticle.link);
     if (uri != null && await canLaunchUrl(uri)) {
@@ -161,6 +199,20 @@ class _ArticleScreenState extends State<ArticleScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: _ttsState == TtsPlaybackState.playing
+                ? 'Stop Reading Aloud'
+                : 'Read Article Aloud (On-Device Voice)',
+            icon: Icon(
+              _ttsState == TtsPlaybackState.playing
+                  ? Icons.stop_circle_outlined
+                  : Icons.volume_up_outlined,
+              color: _ttsState == TtsPlaybackState.playing
+                  ? NewspaperTheme.editorialAccent
+                  : NewspaperTheme.inkBlack,
+            ),
+            onPressed: _toggleTts,
+          ),
           IconButton(
             tooltip: _isExtracting ? 'Extracting...' : 'Fetch Full Story (Readability Mode)',
             icon: _isExtracting
